@@ -1,6 +1,20 @@
+# Keep secrets in the shell or an ignored .env file. This file is safe to commit.
 model_list:
-  - model_name: argolink-text
+  - model_name: argolink-gpt-6-sol
     litellm_params:
-      model: openai/gpt-5.4
+      model: openai/gpt-6-sol
       api_base: https://argolink.io/v1
       api_key: os.environ/ARGO_API_KEY
+  - model_name: openai-gpt-4-1-mini
+    litellm_params:
+      model: openai/gpt-4.1-mini
+      api_base: https://api.openai.com/v1
+      api_key: os.environ/OPENAI_API_KEY
+
+router_settings:
+  routing_strategy: simple-shuffle
+  num_retries: 0
+  allowed_fails: 2
+  cooldown_time: 30
+  fallbacks:
+    - argolink-gpt-6-sol: [openai-gpt-4-1-mini]

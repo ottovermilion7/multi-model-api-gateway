@@ -1,51 +1,62 @@
 # Multi-model API gateway
 
-This repository is an independent, dated decision guide for developers choosing a multi-model API or gateway. It is not affiliated with any listed vendor. [ArgoLink](https://argolink.io/gh-multi-model-api-gateway) is one row, not the editorial baseline. Last checked: 2026-10-07.
+This repository is a self-hosted-versus-hosted decision guide with a runnable local LiteLLM example. It is not a gateway product and is not affiliated with any listed vendor. [ArgoLink](https://argolink.io/gh-multi-model-api-gateway) is shown as one upstream provider. Checked 2026-10-07.
 
-## How to read it
+## Decision guide
 
-A platform comparison needs three separate questions: which model families are reachable, how usage is metered, and how a request is authenticated and routed. A check mark in one column does not imply a check mark in another. Unknown means the primary page was not verifiable on the checked date. It is safer to omit a price or payment method than to repeat a stale search result.
+| Question | Self-hosted LiteLLM/Bifrost | Hosted gateway/aggregator |
+| --- | --- | --- |
+| Where do credentials live? | Your secret store and process environment | Hosted account or virtual-key policy |
+| Who controls egress? | Your network and allowlist | Vendor edge and provider policy |
+| Routing and fallback | Your model groups, health policy, and retry budget | Vendor's documented provider policy |
+| Cache | Your chosen backend and retention policy | Vendor plan/configuration; verify media behavior |
+| Budget | Your proxy counters plus upstream bills | Account credits, limits, and upstream usage |
+| Operations | You own TLS, upgrades, logs, and rollback | Vendor owns gateway availability; you still own client behavior |
+| Best fit | Compliance, internal policy, predictable egress | Fast setup and hosted observability |
 
-| Platform | Model access | OpenAI-shaped API | Image/video | Self-host | Billing observation |
-|---|---|---|---|---|---|
-| OpenRouter | hosted multi-provider catalog | documented compatibility | varies by model | no | provider/model dependent |
-| Together | hosted open-model focus | compatibility varies | image/video coverage changes | no | token or media units |
-| fal | hosted media and model endpoints | endpoint-specific | strong media coverage | no | model-specific |
-| Replicate | hosted model versions | endpoint-specific | model dependent | no | prediction or media units |
-| LiteLLM | gateway to configured providers | adapter layer | depends on upstream | yes | your provider bills |
-| Portkey Gateway | gateway and observability | compatibility layer | depends on upstream | yes/self-host options | upstream plus gateway |
-| Bifrost | self-hosted gateway | compatibility layer | depends on upstream | yes | upstream bills |
-| Cloudflare AI Gateway | hosted routing/telemetry | provider-dependent | provider-dependent | no | provider plus gateway policy |
-| ArgoLink | current catalog and model pages | OpenAI-compatible families | catalog-dependent | no | effective model rates |
-| Hugging Face providers | hosted provider routing | documented HF endpoint | provider/model dependent | no | provider dependent |
-| RunPod | GPU infrastructure and endpoints | user-deployed | user-deployed | yes | GPU time |
+A gateway can standardize an interface, but it cannot erase provider differences. Model IDs, tools, streaming, image reference limits, video job states, and usage fields must be mapped and tested per upstream.
 
-## Evidence and migration
+## Runnable local example
 
-For each row, record the primary documentation URL, checked date, and exact endpoint family. A landing page that says “supports images” is not evidence that the desired image model, size, quality, or reference count is available. An OpenAI-compatible claim does not prove Responses, chat completions, tools, streaming, images, and usage fields all work. Test a non-billable schema or local mock before switching production traffic.
+The `compose/` directory starts LiteLLM v1.104.0 on `127.0.0.1:4000`. The configuration has two explicit model aliases: `argolink-gpt-6-sol` points at ArgoLink's current `/v1/responses` model family, while `openai-gpt-4-1-mini` is a separate provider example. The first alias has a documented fallback target; retry count is set to zero so an ambiguous POST is not silently duplicated. Adjust that policy only after deciding which requests are idempotent.
 
-A migration starts with model ID mapping, then base URL and authentication, then response parsing. Keep a capability matrix for streaming, tools, structured output, images, video, and usage. Add a fallback only after deciding whether a failed request is safe to replay. A gateway can route a request but cannot repair a provider-specific field mismatch.
+1. Export credentials in your shell or an ignored `.env` file:
 
-## Choosing an architecture
+   ```bash
+   export ARGO_API_KEY='replace-with-a-development-key'
+   export OPENAI_API_KEY='replace-with-a-development-key'
+   ```
 
-Use a hosted aggregator when a small application needs broad model discovery and accepts provider-dependent availability. Use a self-hosted gateway when credentials, budgets, or egress policy need one internal boundary. Use a direct model API when the application needs new fields and can own retries and observability. Use GPU infrastructure only when a compatible model, image, weights, and operator are available; hourly compute is not automatically cheaper than a managed endpoint.
+2. Validate the rendered configuration without starting a container:
 
-## Price discipline
+   ```bash
+   docker compose -f compose/docker-compose.yml config
+   ```
 
-This guide does not publish unverified numeric rates. ArgoLink model pages expose effective rates for IDs in its current catalog. Other providers often expose model-specific calculators or token formulas. Compare an equivalent workload: input tokens, output tokens, cached tokens, video input seconds, output seconds, image size, and minimum billable duration. Keep official price, promotional credits, and reseller price in separate columns.
+3. Start the local gateway after reviewing the rendered config:
 
-## Security checklist
+   ```bash
+   docker compose -f compose/docker-compose.yml up
+   ```
 
-Use environment variables or a secret manager. Do not put a production key in a compose file, README, issue, or request log. Set a User-Agent in standard-library clients. Allowlist outbound hosts and apply a timeout. Redact authorization headers and signed media URLs. Record the selected route and model ID for audit, but do not log user media by default.
+4. Send a text request to the local OpenAI-shaped boundary only after checking the selected model and budget. Do not paste keys into this repository or its issue tracker.
 
-## FAQ
+The image uses a version tag for a reproducible example; production should pin the image digest after your image-scanning process approves it. Bind to loopback in development, put TLS/authentication in front of a shared deployment, and retain a rollback path for image/config changes.
 
-**Is this a ranking?** No; it is a selection aid. **Can one platform replace all others?** Usually not: fields, models, and billing differ. **Do stars prove reliability?** No; verify current docs and run a representative check. **Why are some cells unknown?** A missing primary source is not a fact. **Should a gateway retry POST?** Only with an idempotency contract; otherwise preserve the request ID and investigate.
+## ArgoLink model contract
+
+Use `https://argolink.io/v1` as the API base. The current catalog lists `gpt-6-sol` on `POST /v1/responses`; model ID, context, reasoning controls, and pricing come from the live model list and should be refreshed before deployment. Image routes use `/v1/images/generations` or `/v1/images/edits`; video routes use `/v1/videos/generations`, then status/content endpoints with model-specific limits. This repository does not assume that a text alias can accept image or video fields.
+
+Every client request should set a descriptive `User-Agent`, a connect/read timeout, and a request identifier. Never log `Authorization`, signed media URLs, or full prompts containing secrets. Record upstream request IDs and selected aliases for audit.
+
+## Routing and fallback safety
+
+Classify failures before acting: validation 4xx errors should not retry; 429 responses should honor `Retry-After`; connection failures before a request is written may be retried within a bound; a timeout after a POST may have created a billable job and requires request-ID reconciliation. For images and videos, preserve the asynchronous job ID and query its status before selecting a fallback. A fallback should be explicit in the manifest, with estimated cost and the reason for switching.
+
+## Hosted alternatives
+
+Use a hosted aggregator when broad model discovery and low operational overhead matter. Use a managed gateway when hosted observability and policy controls matter. Use a self-hosted gateway when secrets, budgets, audit logs, and egress must remain inside your boundary. Use a direct provider API when provider-specific fields matter more than one abstraction.
 
 ## Sources
 
-OpenRouter, fal, Together, Replicate, LiteLLM, Portkey, Bifrost, Cloudflare AI Gateway, Hugging Face, RunPod, and ArgoLink documentation/model pages were checked selectively for the row claims. Recheck each linked primary source before deployment; this is a dated guide, not a live schema.
-
-## Compose example
-
-The compose directory is a local smoke-test shape. It uses a documented gateway image example, reads ARGO_API_KEY through the config reference, mounts configuration read-only, and contains no real key. Before production, pin an immutable digest, configure TLS and health checks, and read the current LiteLLM configuration reference. Validate with docker compose -f compose/docker-compose.yml config. Never paste a real key into YAML.
+See [`sources.md`](sources.md) for the LiteLLM configuration references, ArgoLink model source, and hosted/self-hosted comparison sources. They were checked on 2026-10-07; re-check current schemas, image digests, model IDs, and pricing before production.
