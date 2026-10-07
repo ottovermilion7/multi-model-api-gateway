@@ -1,0 +1,6 @@
+model_list:
+  - model_name: argolink-text
+    litellm_params:
+      model: openai/gpt-5.4
+      api_base: https://argolink.io/v1
+      api_key: os.environ/ARGO_API_KEY
